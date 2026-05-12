@@ -158,7 +158,7 @@ export default function App() {
         fetchTasks()
       }
     } catch (err) {
-      logApiRequest(method, path, "FAILED", { error: err.message, advice: "Ensure FastAPI server is running locally on port 8000." })
+      logApiRequest(method, path, "FAILED", { error: err.message, advice: "Ensure FastAPI server is running locally on port 8001." })
     } finally {
       setTerminalLoading(false)
     }
@@ -369,11 +369,11 @@ export default function App() {
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: "1rem", marginTop: "0.6rem" }}>
                 <code style={{ background: "#05050a", border: "1px solid rgba(245, 158, 11, 0.2)", padding: "0.4rem 0.8rem", color: "white", borderRadius: "4px", fontSize: "0.85rem", fontFamily: "var(--font-mono)" }}>
-                  uvicorn api.main:app --reload
+                  uvicorn api.main:app --reload --port 8001
                 </code>
                 <button 
                   onClick={() => {
-                    navigator.clipboard.writeText("uvicorn api.main:app --reload");
+                    navigator.clipboard.writeText("uvicorn api.main:app --reload --port 8001");
                   }} 
                   className="btn-run-api" 
                   style={{ borderColor: "rgba(245, 158, 11, 0.4)", color: "var(--color-warning)", background: "rgba(245, 158, 11, 0.05)" }}
