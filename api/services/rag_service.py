@@ -11,7 +11,6 @@ import os
 import io
 import hashlib
 import logging
-import chromadb
 import ollama as ollama_client
 import pypdf
 import docx
@@ -21,14 +20,45 @@ from core.settings import settings
 
 logger = logging.getLogger(__name__)
 
+# Mock classes to support serverless environments (Vercel) where heavy local vector databases (ChromaDB) are excluded.
+class MockCollection:
+    def count(self) -> int:
+        return 0
+    def add(self, *args, **kwargs):
+        pass
+    def query(self, *args, **kwargs) -> Dict:
+        return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]]}
+    def get(self, *args, **kwargs) -> Dict:
+        return {"ids": [], "documents": [], "metadatas": []}
+    def delete(self, *args, **kwargs):
+        pass
+
+class MockChromaClient:
+    def get_or_create_collection(self, *args, **kwargs) -> MockCollection:
+        return MockCollection()
+    def get_collection(self, *args, **kwargs) -> MockCollection:
+        return MockCollection()
+    def delete_collection(self, *args, **kwargs):
+        pass
+
 # ---------------------------------------------------------------------------
-# ChromaDB persistent storage setup
+# ChromaDB persistent storage setup with Serverless Graceful Fallback
 # ---------------------------------------------------------------------------
-CHROMA_DIR = os.path.join(
-    os.path.dirname(os.path.dirname(__file__)), "chroma_data"
-)
-os.makedirs(CHROMA_DIR, exist_ok=True)
-chroma = chromadb.PersistentClient(path=CHROMA_DIR)
+try:
+    import chromadb
+    CHROMA_AVAILABLE = True
+except ImportError:
+    CHROMA_AVAILABLE = False
+
+if CHROMA_AVAILABLE:
+    CHROMA_DIR = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "chroma_data"
+    )
+    os.makedirs(CHROMA_DIR, exist_ok=True)
+    chroma = chromadb.PersistentClient(path=CHROMA_DIR)
+else:
+    logger.warning("ChromaDB is not installed in this environment. Falling back to Mock Chroma Client for serverless runtime.")
+    chroma = MockChromaClient()
 
 # ---------------------------------------------------------------------------
 # Ollama client initialization (used for embedding generation)
