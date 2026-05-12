@@ -3,14 +3,39 @@ logs
 *.log
 npm-debug.log*
 yarn-debug.log*
-yarn-error.log*
 pnpm-debug.log*
 lerna-debug.log*
 
+# Node modules and build output
 node_modules
 dist
 dist-ssr
 *.local
+.turbo
+.vercel
+
+# Environment files
+.env
+.env.production
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+api/.env
+apps/web/.env
+
+# Python caching
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.ruff_cache/
+
+# Databases and local assets
+api/chroma_data/
+api/static/logos/*
+!api/static/logos/.gitkeep
 
 # Editor directories and files
 .vscode/*
