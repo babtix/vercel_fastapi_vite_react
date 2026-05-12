@@ -1,0 +1,16 @@
+# Exclude dependencies from local upload (Vercel will install them in the cloud)
+node_modules/
+**/node_modules/
+
+# Exclude build caches and logs
+.turbo/
+.vercel/
+.git/
+*.log
+
+# Exclude local test database files
+api/chroma_data/
+
+# Exclude compiled assets
+dist/
+apps/web/dist/
