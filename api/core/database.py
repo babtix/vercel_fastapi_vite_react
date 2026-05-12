@@ -26,12 +26,10 @@ conversations_collection = database.get_collection("conversations")
 
 
 async def init_db() -> None:
-    """Initialize database indexes for unique constraints and query performance.
+    """Initialize database indexes and seed the default admin account for testing.
 
-    Creates the following indexes:
-        - Unique index on `users.email`.
-        - Unique index on `users.username`.
-        - Compound index on `conversations.user_id` (asc) and `updated_at` (desc).
+    Creates indexes on users and conversations, and checks if the admin user
+    'babtich' exists. If not, automatically registers the admin account with 'babtich123'.
     """
     import pymongo
 
@@ -44,6 +42,23 @@ async def init_db() -> None:
     await conversations_collection.create_index(
         [("user_id", pymongo.ASCENDING), ("updated_at", pymongo.DESCENDING)]
     )
+
+    # Seed the test admin account 'babtich' / 'babtich123' if it doesn't exist
+    admin_exists = await users_collection.find_one({"username": "babtich"})
+    if not admin_exists:
+        try:
+            from core.security import get_password_hash
+            hashed = get_password_hash("babtich123")
+            await users_collection.insert_one({
+                "username": "babtich",
+                "email": "admin@babtich.com",
+                "hashed_password": hashed,
+                "is_admin": True
+            })
+            print("Successfully seeded testing admin account: 'babtich'")
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("Could not seed default admin: %s", exc)
 
 
 __all__ = [
