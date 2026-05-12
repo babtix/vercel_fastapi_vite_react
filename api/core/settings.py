@@ -47,7 +47,7 @@ class Settings(BaseSettings):
     DATABASE_NAME: str = "multiia_db"
 
     # Security settings
-    SECRET_KEY: str
+    SECRET_KEY: str = "super-secret-key-minimum-32-characters-default-change-me"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
