@@ -1,6 +1,8 @@
 # Exclude dependencies from local upload (Vercel will install them in the cloud)
 node_modules/
 **/node_modules/
+package-lock.json
+**/package-lock.json
 
 # Exclude build caches and logs
 .turbo/
