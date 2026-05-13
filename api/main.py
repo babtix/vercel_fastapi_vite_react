@@ -34,11 +34,13 @@ except OSError:
     pass
 
 
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    await init_db()
+    try:
+        await init_db()
+    except Exception as exc:
+        logging.error("Database initialization failed: %s", exc)
+        # Don't crash the app on DB failure — endpoints will return 500 individually
     yield
 
 
@@ -52,14 +54,23 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
-# Static files mounting
-app.mount("/static", StaticFiles(directory=static_dir), name="static")
+# Static files mounting (only if directory exists; Vercel serverless is read-only)
+if os.path.isdir(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
+else:
+    logging.warning("Static directory '%s' does not exist; skipping StaticFiles mount.", static_dir)
 
 
 # CORS middleware setup
+# Append production domain to configured origins
+_cors_origins = list(settings.CORS_ORIGINS)
+_production_origin = "https://vercelfastapivitereact.vercel.app"
+if _production_origin not in _cors_origins:
+    _cors_origins.append(_production_origin)
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.CORS_ORIGINS,
+    allow_origins=_cors_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type"],
