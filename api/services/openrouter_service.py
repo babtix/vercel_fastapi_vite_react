@@ -109,6 +109,14 @@ async def list_models() -> list:
             models = []
             for m in data.get("data", []):
                 model_id = m.get("id", "")
+                pricing = m.get("pricing", {})
+                prompt_price = pricing.get("prompt", "0")
+                completion_price = pricing.get("completion", "0")
+                # A model is considered free if both prompt and completion pricing are 0
+                is_free = (
+                    (prompt_price == "0" or prompt_price == 0 or float(prompt_price) == 0)
+                    and (completion_price == "0" or completion_price == 0 or float(completion_price) == 0)
+                )
                 # OpenRouter models are all cloud-based
                 models.append(
                     {
@@ -117,6 +125,7 @@ async def list_models() -> list:
                         "size_gb": 0.0,
                         "provider": "openrouter",
                         "is_cloud": True,
+                        "is_free": is_free,
                         "context_length": m.get("context_length", 0),
                         "description": m.get("description", ""),
                     }

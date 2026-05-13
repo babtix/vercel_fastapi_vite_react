@@ -102,8 +102,8 @@ export default function AgentForm({ agent, onClose, onSaved }) {
   }
 
   return createPortal(
-    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-      <div className="bg-background border border-border rounded-2xl w-full max-w-lg p-6 animate-fade-in max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-start justify-center overflow-y-auto p-4 sm:p-6">
+      <div className="bg-background border border-border rounded-2xl w-full max-w-lg p-6 animate-fade-in mt-4 sm:mt-8 mb-4 sm:mb-8 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between mb-6">
           <h3 className="font-semibold text-lg flex items-center gap-2">

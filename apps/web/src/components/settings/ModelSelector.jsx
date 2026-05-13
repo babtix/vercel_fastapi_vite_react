@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Cloud, Server, Filter, ChevronDown, RefreshCw, Check } from "lucide-react"
+import { Cloud, Server, Filter, ChevronDown, RefreshCw, Check, Gift, CreditCard } from "lucide-react"
 import api from "../../lib/api"
 
 export default function ModelSelector({ value, onChange, provider, className = "" }) {
@@ -40,12 +40,18 @@ export default function ModelSelector({ value, onChange, provider, className = "
 
   const filtered = models.filter((m) => {
     if (provider && m.provider !== provider) return false
-    if (modelFilter === "cloud") return m.is_cloud
-    if (modelFilter === "local") return !m.is_cloud
+    if (modelFilter === "free") return m.is_free
+    if (modelFilter === "paid") return !m.is_free
     return true
   })
 
   const selectedModel = models.find((m) => m.name === value)
+
+  const filterLabel = {
+    all: "tous",
+    free: "gratuit",
+    paid: "payant",
+  }
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
@@ -64,9 +70,9 @@ export default function ModelSelector({ value, onChange, provider, className = "
                 <Server className="w-4 h-4 text-primary shrink-0" />
               )}
               <span className="truncate">{value}</span>
-              {selectedModel && (
-                <span className="text-xs text-muted-foreground/60 shrink-0">
-                  ({selectedModel.size_gb} GB)
+              {selectedModel?.is_free && (
+                <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-medium shrink-0">
+                  GRATUIT
                 </span>
               )}
             </>
@@ -85,8 +91,8 @@ export default function ModelSelector({ value, onChange, provider, className = "
             <div className="flex items-center gap-1">
               {[
                 { id: "all", label: "Tous", icon: Filter },
-                { id: "cloud", label: "Cloud", icon: Cloud },
-                { id: "local", label: "Local", icon: Server },
+                { id: "free", label: "Gratuit", icon: Gift },
+                { id: "paid", label: "Payant", icon: CreditCard },
               ].map((f) => (
                 <button
                   key={f.id}
@@ -134,7 +140,7 @@ export default function ModelSelector({ value, onChange, provider, className = "
               <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                 {models.length === 0
                   ? "Aucun modèle trouvé. Vérifiez vos clés et votre connexion."
-                  : `Aucun modèle ${modelFilter === "cloud" ? "cloud" : "local"} trouvé`}
+                  : `Aucun modèle ${filterLabel[modelFilter]} trouvé`}
               </div>
             ) : (
               filtered.map((model) => (
@@ -156,14 +162,18 @@ export default function ModelSelector({ value, onChange, provider, className = "
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
                       <span className="truncate font-medium">{model.name}</span>
-                      {model.is_cloud && (
-                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-chart-2/15 text-chart-2 font-medium shrink-0">
-                          CLOUD
+                      {model.is_free ? (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-500 font-medium shrink-0">
+                          GRATUIT
+                        </span>
+                      ) : (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-500/15 text-amber-500 font-medium shrink-0">
+                          PAYANT
                         </span>
                       )}
                     </div>
                     <p className="text-xs text-muted-foreground/60 mt-0.5">
-                      {model.size_gb} GB
+                      {model.provider === "openrouter" ? "OpenRouter" : `${model.size_gb} GB`}
                     </p>
                   </div>
                   {value === model.name && (
@@ -177,7 +187,7 @@ export default function ModelSelector({ value, onChange, provider, className = "
           {/* Summary */}
           {models.length > 0 && (
             <div className="px-3 py-2 border-t border-border/50 bg-muted/20 text-[11px] text-muted-foreground/60">
-              {filtered.filter((m) => m.is_cloud).length} cloud · {filtered.filter((m) => !m.is_cloud).length} local · {filtered.length} total
+              {filtered.filter((m) => m.is_free).length} gratuit · {filtered.filter((m) => !m.is_free).length} payant · {filtered.length} total
             </div>
           )}
         </div>

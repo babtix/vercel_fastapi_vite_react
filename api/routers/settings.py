@@ -11,7 +11,7 @@ from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from core.settings import settings
-from dependencies import get_current_admin_user
+from dependencies import get_current_user, get_current_admin_user
 from services import lmstudio_service, openrouter_service
 import ollama
 
@@ -29,6 +29,7 @@ class ModelInfo(BaseModel):
         size_gb: Size in gigabytes (0.0 for cloud models).
         provider: Origin provider — \"openrouter\", \"ollama\", or \"lmstudio\".
         is_cloud: Whether the model is a cloud endpoint.
+        is_free: Whether the model is free to use.
         context_length: Context window size (OpenRouter models).
         description: Short model description (OpenRouter models).
     """
@@ -38,6 +39,7 @@ class ModelInfo(BaseModel):
     size_gb: float
     provider: str
     is_cloud: bool
+    is_free: bool = False
     context_length: int = 0
     description: str = ""
 
@@ -156,7 +158,7 @@ class SettingsUpdate(BaseModel):
     status_code=status.HTTP_200_OK,
 )
 async def list_available_models(
-    current_user: dict = Depends(get_current_admin_user),
+    current_user: dict = Depends(get_current_user),
 ):
     """List all available LLM models from OpenRouter (primary), Ollama, and LM Studio.
 
@@ -179,6 +181,7 @@ async def list_available_models(
                     size_gb=m["size_gb"],
                     provider=m["provider"],
                     is_cloud=m["is_cloud"],
+                    is_free=m.get("is_free", False),
                     context_length=m.get("context_length", 0),
                     description=m.get("description", ""),
                 )
@@ -203,6 +206,7 @@ async def list_available_models(
                     size_gb=size_gb,
                     provider="ollama",
                     is_cloud="cloud" in name.lower(),
+                    is_free=True,
                 )
             )
     except Exception as e:
@@ -219,6 +223,7 @@ async def list_available_models(
                     size_gb=m["size_gb"],
                     provider=m["provider"],
                     is_cloud=m["is_cloud"],
+                    is_free=True,
                 )
             )
     except Exception as e:
