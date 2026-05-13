@@ -1,11 +1,11 @@
 """Unified LLM service router.
 
 Routes streaming chat requests to the appropriate backend provider
-(Ollama or LM Studio) based on the configured or per-request provider.
+(OpenRouter, Ollama, or LM Studio) based on the configured or per-request provider.
 """
 
 from core.settings import settings
-from services import ollama_service, lmstudio_service
+from services import ollama_service, lmstudio_service, openrouter_service
 
 
 class LLMServiceException(Exception):
@@ -21,7 +21,7 @@ async def generate_chat_response_stream(
     Args:
         messages: List of message dicts formatted for the LLM API.
         model: Target model identifier. Falls back to settings.DEFAULT_MODEL_NAME.
-        provider: LLM provider name ("ollama" or "lmstudio").
+        provider: LLM provider name ("openrouter", "ollama", or "lmstudio").
                   Falls back to settings.DEFAULT_LLM_PROVIDER.
 
     Yields:
@@ -35,14 +35,18 @@ async def generate_chat_response_stream(
         provider = settings.DEFAULT_LLM_PROVIDER
 
     try:
-        # Route to LM Studio if explicitly requested
-        if provider.lower() == "lmstudio":
+        if provider.lower() == "openrouter":
+            async for chunk in openrouter_service.generate_chat_response_stream(
+                messages, model
+            ):
+                yield chunk
+        elif provider.lower() == "lmstudio":
             async for chunk in lmstudio_service.generate_chat_response_stream(
                 messages, model
             ):
                 yield chunk
         else:
-            # Default to Ollama for any other provider value
+            # Legacy Ollama fallback
             async for chunk in ollama_service.generate_chat_response_stream(
                 messages, model
             ):

@@ -22,8 +22,12 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/agents", tags=["Agents"])
 
 # Setup logo upload directory
-UPLOAD_DIR = "static/logos"
-os.makedirs(UPLOAD_DIR, exist_ok=True)
+UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "static", "logos")
+try:
+    os.makedirs(UPLOAD_DIR, exist_ok=True)
+except OSError as exc:
+    logger.warning("Could not create upload directory (might be on read-only serverless environment): %s", exc)
+
 
 AGENT_LOGO_ALLOWED_EXTENSIONS = {
     ".png",

@@ -1,7 +1,7 @@
 """API endpoints for managing application settings and LLM models.
 
-Handles listing available models from Ollama and LM Studio, reading
-runtime configuration, and persisting setting changes to the `.env` file.
+Handles listing available models from OpenRouter (primary), Ollama, and LM Studio,
+reading runtime configuration, and persisting setting changes to the `.env` file.
 """
 
 import os
@@ -12,7 +12,7 @@ from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from core.settings import settings
 from dependencies import get_current_admin_user
-from services import lmstudio_service
+from services import lmstudio_service, openrouter_service
 import ollama
 
 logger = logging.getLogger(__name__)
@@ -21,14 +21,16 @@ router = APIRouter(prefix="/settings", tags=["Settings"])
 
 
 class ModelInfo(BaseModel):
-    """Schema representing metadata for a single downloadable or loaded LLM.
+    """Schema representing metadata for a single LLM model.
 
     Attributes:
-        name: Model identifier or filename.
-        size: Size in bytes.
-        size_gb: Size in gigabytes (rounded to 2 decimals).
-        provider: Origin provider — "ollama" or "lmstudio".
-        is_cloud: Whether the model is tagged as a cloud endpoint.
+        name: Model identifier.
+        size: Size in bytes (0 for cloud models).
+        size_gb: Size in gigabytes (0.0 for cloud models).
+        provider: Origin provider — \"openrouter\", \"ollama\", or \"lmstudio\".
+        is_cloud: Whether the model is a cloud endpoint.
+        context_length: Context window size (OpenRouter models).
+        description: Short model description (OpenRouter models).
     """
 
     name: str
@@ -36,6 +38,8 @@ class ModelInfo(BaseModel):
     size_gb: float
     provider: str
     is_cloud: bool
+    context_length: int = 0
+    description: str = ""
 
 
 class ModelsResponse(BaseModel):
@@ -47,9 +51,12 @@ class ModelsResponse(BaseModel):
 class SettingsData(BaseModel):
     """Read-only schema exposing current runtime configuration values."""
 
+    OPENROUTER_API_KEY: str
+    OPENROUTER_BASE_URL: str
+    DEFAULT_LLM_PROVIDER: str
+    DEFAULT_MODEL_NAME: str
     OLLAMA_URL: str
     OLLAMA_TIMEOUT: float
-    DEFAULT_MODEL_NAME: str
     MODEL_TEMPERATURE: float
     MODEL_TOP_P: float
     MODEL_TOP_K: int
@@ -64,9 +71,12 @@ class SettingsUpdate(BaseModel):
     All fields are optional; only provided values are updated and persisted.
     """
 
+    OPENROUTER_API_KEY: Optional[str] = None
+    OPENROUTER_BASE_URL: Optional[str] = None
+    DEFAULT_LLM_PROVIDER: Optional[str] = None
+    DEFAULT_MODEL_NAME: Optional[str] = None
     OLLAMA_URL: Optional[str] = None
     OLLAMA_TIMEOUT: Optional[float] = None
-    DEFAULT_MODEL_NAME: Optional[str] = None
     MODEL_TEMPERATURE: Optional[float] = None
     MODEL_TOP_P: Optional[float] = None
     MODEL_TOP_K: Optional[int] = None
@@ -130,6 +140,15 @@ class SettingsUpdate(BaseModel):
             raise ValueError("Timeout must be greater than 0")
         return v
 
+    @field_validator("DEFAULT_LLM_PROVIDER")
+    @classmethod
+    def validate_provider(cls, v: Optional[str]) -> Optional[str]:
+        """Ensure provider is one of the supported values."""
+        allowed = {"openrouter", "ollama", "lmstudio"}
+        if v is not None and v.lower() not in allowed:
+            raise ValueError(f"Provider must be one of: {', '.join(allowed)}")
+        return v.lower() if v else v
+
 
 @router.get(
     "/models",
@@ -139,17 +158,35 @@ class SettingsUpdate(BaseModel):
 async def list_available_models(
     current_user: dict = Depends(get_current_admin_user),
 ):
-    """List all available LLM models from Ollama and LM Studio.
+    """List all available LLM models from OpenRouter (primary), Ollama, and LM Studio.
 
     Args:
         current_user: Injected admin user dependency.
 
     Returns:
-        A ModelsResponse containing aggregated model metadata.
+        A ModelsResponse containing aggregated model metadata, sorted with cloud models first.
     """
     models = []
 
-    # Fetch Ollama models
+    # Fetch OpenRouter models (primary cloud provider)
+    try:
+        or_models = await openrouter_service.list_models()
+        for m in or_models:
+            models.append(
+                ModelInfo(
+                    name=m["name"],
+                    size=m["size"],
+                    size_gb=m["size_gb"],
+                    provider=m["provider"],
+                    is_cloud=m["is_cloud"],
+                    context_length=m.get("context_length", 0),
+                    description=m.get("description", ""),
+                )
+            )
+    except Exception as e:
+        logger.error("Error fetching OpenRouter models: %s", e)
+
+    # Fetch Ollama models (legacy local provider)
     try:
         client = ollama.AsyncClient(
             host=settings.OLLAMA_URL, timeout=settings.OLLAMA_TIMEOUT
@@ -171,7 +208,7 @@ async def list_available_models(
     except Exception as e:
         logger.error("Error fetching Ollama models: %s", e)
 
-    # Fetch LM Studio models
+    # Fetch LM Studio models (legacy local provider)
     try:
         lms_models = await lmstudio_service.list_models()
         for m in lms_models:
@@ -187,8 +224,12 @@ async def list_available_models(
     except Exception as e:
         logger.error("Error fetching LM Studio models: %s", e)
 
-    # Sort cloud models first
-    models.sort(key=lambda m: (not m.is_cloud, m.name))
+    # Sort: OpenRouter first, then cloud, then local, then alphabetical
+    def sort_key(m: ModelInfo):
+        provider_order = {"openrouter": 0, "ollama": 1, "lmstudio": 2}
+        return (provider_order.get(m.provider, 9), not m.is_cloud, m.name)
+
+    models.sort(key=sort_key)
     return ModelsResponse(models=models)
 
 
@@ -205,9 +246,12 @@ async def get_settings(
         A SettingsData object with the active configuration values.
     """
     return SettingsData(
+        OPENROUTER_API_KEY=settings.OPENROUTER_API_KEY,
+        OPENROUTER_BASE_URL=settings.OPENROUTER_BASE_URL,
+        DEFAULT_LLM_PROVIDER=settings.DEFAULT_LLM_PROVIDER,
+        DEFAULT_MODEL_NAME=settings.DEFAULT_MODEL_NAME,
         OLLAMA_URL=settings.OLLAMA_URL,
         OLLAMA_TIMEOUT=settings.OLLAMA_TIMEOUT,
-        DEFAULT_MODEL_NAME=settings.DEFAULT_MODEL_NAME,
         MODEL_TEMPERATURE=settings.MODEL_TEMPERATURE,
         MODEL_TOP_P=settings.MODEL_TOP_P,
         MODEL_TOP_K=settings.MODEL_TOP_K,
@@ -268,9 +312,12 @@ async def update_settings(
     await run_in_threadpool(_persist_env, data)
 
     return SettingsData(
+        OPENROUTER_API_KEY=settings.OPENROUTER_API_KEY,
+        OPENROUTER_BASE_URL=settings.OPENROUTER_BASE_URL,
+        DEFAULT_LLM_PROVIDER=settings.DEFAULT_LLM_PROVIDER,
+        DEFAULT_MODEL_NAME=settings.DEFAULT_MODEL_NAME,
         OLLAMA_URL=settings.OLLAMA_URL,
         OLLAMA_TIMEOUT=settings.OLLAMA_TIMEOUT,
-        DEFAULT_MODEL_NAME=settings.DEFAULT_MODEL_NAME,
         MODEL_TEMPERATURE=settings.MODEL_TEMPERATURE,
         MODEL_TOP_P=settings.MODEL_TOP_P,
         MODEL_TOP_K=settings.MODEL_TOP_K,

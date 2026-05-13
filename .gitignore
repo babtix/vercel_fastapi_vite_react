@@ -47,3 +47,5 @@ api/static/logos/*
 *.njsproj
 *.sln
 *.sw?
+
+.env*.local

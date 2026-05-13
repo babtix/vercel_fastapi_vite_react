@@ -18,7 +18,7 @@ class Settings(BaseSettings):
         SECRET_KEY: Secret key used for signing JWT tokens (required).
         ALGORITHM: JWT signing algorithm (default HS256).
         ACCESS_TOKEN_EXPIRE_MINUTES: Lifetime of access tokens in minutes.
-        DEFAULT_LLM_PROVIDER: Default provider — "ollama" or "lmstudio".
+        DEFAULT_LLM_PROVIDER: Default provider — "openrouter", "ollama", or "lmstudio".
         OLLAMA_URL: Base URL for the Ollama API.
         OLLAMA_TIMEOUT: Request timeout for Ollama calls in seconds.
         DEFAULT_MODEL_NAME: Default LLM model identifier.
@@ -52,14 +52,18 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     # LLM Provider settings
-    DEFAULT_LLM_PROVIDER: str = "ollama"  # "ollama" or "lmstudio"
+    DEFAULT_LLM_PROVIDER: str = "openrouter"  # "openrouter", "ollama", or "lmstudio"
 
-    # Ollama settings
+    # OpenRouter settings
+    OPENROUTER_API_KEY: str = ""
+    OPENROUTER_BASE_URL: str = "https://openrouter.ai/api/v1"
+
+    # Ollama settings (legacy / local fallback)
     OLLAMA_URL: str = "http://localhost:11434"
     OLLAMA_TIMEOUT: float = 120.0
-    DEFAULT_MODEL_NAME: str = "deepseek-v3.1:671b-cloud"
+    DEFAULT_MODEL_NAME: str = "openai/gpt-4o-mini"
 
-    # LM Studio settings
+    # LM Studio settings (legacy / local fallback)
     LMSTUDIO_BASE_URL: str = "http://localhost:1234"
     LMSTUDIO_DEFAULT_MODEL: str = "loaded-model"
 

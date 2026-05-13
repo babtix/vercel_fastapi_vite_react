@@ -7,7 +7,7 @@
  */
 
 import { useState } from "react"
-import OllamaSettings from "../components/settings/OllamaSettings"
+import ProviderSettings from "../components/settings/ProviderSettings"
 import AgentSettings from "../components/settings/AgentSettings"
 import UserManagement from "../components/settings/UserManagement"
 import UISettings from "../components/settings/UISettings"
@@ -19,14 +19,14 @@ import {
 } from "lucide-react"
 
 const TABS = [
-  { id: "ollama", label: "Paramètres Ollama", icon: SettingsIcon },
+  { id: "provider", label: "Fournisseur LLM", icon: SettingsIcon },
   { id: "agents", label: "Agents IA", icon: Bot },
   { id: "users", label: "Utilisateurs", icon: Users },
   { id: "ui", label: "Apparence", icon: Palette },
 ]
 
 export default function Settings() {
-  const [activeTab, setActiveTab] = useState("ollama")
+  const [activeTab, setActiveTab] = useState("provider")
 
   return (
     <div className="h-full overflow-y-auto custom-scrollbar">
@@ -57,7 +57,7 @@ export default function Settings() {
 
         {/* Tab content */}
         <div className="animate-fade-in-flat">
-          {activeTab === "ollama" && <OllamaSettings />}
+          {activeTab === "provider" && <ProviderSettings />}
           {activeTab === "agents" && <AgentSettings />}
           {activeTab === "users" && <UserManagement />}
           {activeTab === "ui" && <UISettings />}

@@ -6,12 +6,11 @@ import { getAssetUrl } from "../../lib/api"
 import ModelSelector from "./ModelSelector"
 import {
   X, Save, Bot, Upload, FileText, Image as ImageIcon, Loader2,
-  Server, Monitor,
+  Cloud,
 } from "lucide-react"
 
 const PROVIDERS = [
-  { id: "ollama", label: "Ollama", icon: Server },
-  { id: "lmstudio", label: "LM Studio", icon: Monitor },
+  { id: "openrouter", label: "OpenRouter", icon: Cloud },
 ]
 
 export default function AgentForm({ agent, onClose, onSaved }) {
@@ -20,7 +19,7 @@ export default function AgentForm({ agent, onClose, onSaved }) {
   const [name, setName] = useState(agent?.name || "")
   const [description, setDescription] = useState(agent?.description || "")
   const [modelName, setModelName] = useState(agent?.model_name || "")
-  const [provider, setProvider] = useState(agent?.provider || "ollama")
+  const [provider, setProvider] = useState(agent?.provider || "openrouter")
   const [ragEnabled, setRagEnabled] = useState(agent?.rag_enabled || false)
   const [promptFile, setPromptFile] = useState(null)
   const [logoFile, setLogoFile] = useState(null)
@@ -71,7 +70,7 @@ export default function AgentForm({ agent, onClose, onSaved }) {
       const formData = new FormData()
       formData.append("name", name.trim())
       formData.append("description", description.trim())
-      formData.append("model_name", modelName || "llama3.2")
+      formData.append("model_name", modelName || "openai/gpt-4o-mini")
       formData.append("provider", provider)
       formData.append("rag_enabled", ragEnabled)
 

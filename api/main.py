@@ -26,7 +26,14 @@ from core.database import init_db
 from core.rate_limit import limiter
 
 # Create static directories
-os.makedirs("static/logos", exist_ok=True)
+static_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+try:
+    os.makedirs(os.path.join(static_dir, "logos"), exist_ok=True)
+except OSError:
+    # Safely ignore if the filesystem is read-only (e.g. Vercel serverless)
+    pass
+
+
 
 
 @asynccontextmanager
@@ -46,7 +53,8 @@ app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Static files mounting
-app.mount("/static", StaticFiles(directory="static"), name="static")
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
 
 # CORS middleware setup
 app.add_middleware(

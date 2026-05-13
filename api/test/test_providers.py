@@ -20,10 +20,10 @@ async def test_provider(provider: str, model: str):
             response += chunk
             print(chunk, end="", flush=True)
         
-        print(f"\n\n✓ {provider} test successful!")
+        print(f"\n\n[PASS] {provider} test successful!")
         return True
     except Exception as e:
-        print(f"\n\n✗ {provider} test failed: {e}")
+        print(f"\n\n[FAIL] {provider} test failed: {e}")
         return False
 
 async def main():
@@ -31,18 +31,23 @@ async def main():
     print("LLM Provider Integration Test")
     print("="*50)
     
+    # Test OpenRouter
+    print("\n1. Testing OpenRouter...")
+    openrouter_success = await test_provider("openrouter", settings.DEFAULT_MODEL_NAME)
+
     # Test Ollama
-    print("\n1. Testing Ollama...")
-    ollama_success = await test_provider("ollama", settings.DEFAULT_MODEL_NAME)
+    print("\n2. Testing Ollama...")
+    ollama_success = await test_provider("ollama", "deepseek-v3.1:671b-cloud")
     
     # Test LM Studio
-    print("\n2. Testing LM Studio...")
+    print("\n3. Testing LM Studio...")
     lmstudio_success = await test_provider("lmstudio", settings.LMSTUDIO_DEFAULT_MODEL)
     
     print("\n" + "="*50)
     print("Test Summary:")
-    print(f"  Ollama:    {'✓ PASS' if ollama_success else '✗ FAIL'}")
-    print(f"  LM Studio: {'✓ PASS' if lmstudio_success else '✗ FAIL'}")
+    print(f"  OpenRouter: {'PASS' if openrouter_success else 'FAIL'}")
+    print(f"  Ollama:     {'PASS' if ollama_success else 'FAIL'}")
+    print(f"  LM Studio:  {'PASS' if lmstudio_success else 'FAIL'}")
     print("="*50)
 
 if __name__ == "__main__":

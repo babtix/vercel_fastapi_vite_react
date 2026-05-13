@@ -133,7 +133,7 @@ export default function ModelSelector({ value, onChange, provider, className = "
             ) : filtered.length === 0 ? (
               <div className="px-3 py-6 text-center text-sm text-muted-foreground">
                 {models.length === 0
-                  ? "Aucun modèle trouvé sur le serveur Ollama"
+                  ? "Aucun modèle trouvé. Vérifiez vos clés et votre connexion."
                   : `Aucun modèle ${modelFilter === "cloud" ? "cloud" : "local"} trouvé`}
               </div>
             ) : (
