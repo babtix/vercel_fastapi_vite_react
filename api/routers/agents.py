@@ -135,12 +135,16 @@ async def create_agent(
         )
         file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
-        # Save logo file using threadpool
-        await run_in_threadpool(
-            _save_logo_sync, logo_file.file, file_path
-        )
-
-        logo_url = f"/static/logos/{safe_filename}"
+        # Save logo file using threadpool (gracefully skip on read-only fs)
+        try:
+            await run_in_threadpool(
+                _save_logo_sync, logo_file.file, file_path
+            )
+            logo_url = f"/static/logos/{safe_filename}"
+        except OSError as exc:
+            logger.warning(
+                "Could not save agent logo on read-only filesystem: %s", exc
+            )
 
     agent_dict = {
         "name": name,
@@ -242,10 +246,15 @@ async def update_agent(
         )
         file_path = os.path.join(UPLOAD_DIR, safe_filename)
 
-        await run_in_threadpool(
-            _save_logo_sync, logo_file.file, file_path
-        )
-        update_data["logo_url"] = f"/static/logos/{safe_filename}"
+        try:
+            await run_in_threadpool(
+                _save_logo_sync, logo_file.file, file_path
+            )
+            update_data["logo_url"] = f"/static/logos/{safe_filename}"
+        except OSError as exc:
+            logger.warning(
+                "Could not save agent logo on read-only filesystem: %s", exc
+            )
 
     await agents_collection.update_one(
         {"_id": ObjectId(agent_id)}, {"$set": update_data}
