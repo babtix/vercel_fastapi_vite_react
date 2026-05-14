@@ -93,8 +93,12 @@ async def generate_chat_response_stream(messages: list, model: str = None):
         raise
 
 
-async def list_models() -> list:
+async def list_models(api_key: str = None) -> list:
     """Fetch the list of available models from OpenRouter.
+
+    Args:
+        api_key: Optional OpenRouter API key. If not provided, reads from
+                 the global settings singleton.
 
     Returns:
         A list of dicts with keys: name, size, size_gb, provider, is_cloud, is_free.
@@ -103,14 +107,15 @@ async def list_models() -> list:
         OpenRouterKeyMissingError: If OPENROUTER_API_KEY is not configured.
         OpenRouterError: If the OpenRouter API request fails.
     """
-    if not settings.OPENROUTER_API_KEY:
+    key = api_key or settings.OPENROUTER_API_KEY
+    if not key:
         raise OpenRouterKeyMissingError(
             "Clé API OpenRouter non configurée. "
             "Rendez-vous dans Administration > Fournisseur LLM pour la renseigner."
         )
 
     headers = {
-        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+        "Authorization": f"Bearer {key}",
     }
 
     try:

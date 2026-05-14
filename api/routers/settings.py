@@ -33,32 +33,76 @@ async def _load_db_settings() -> dict:
 
     Returns an empty dict if the document doesn't exist yet.
     """
-    doc = await settings_collection.find_one({"_id": _SETTINGS_DOC_ID})
-    if doc:
-        # Strip MongoDB internals
-        doc.pop("_id", None)
-        return doc
+    try:
+        doc = await settings_collection.find_one({"_id": _SETTINGS_DOC_ID})
+        if doc:
+            doc.pop("_id", None)
+            return doc
+    except Exception as exc:
+        logger.error("Failed to load settings from MongoDB: %s", exc)
     return {}
 
 
 async def _save_db_settings(data: dict) -> None:
     """Persist settings overrides to MongoDB, upserting the singleton document."""
-    await settings_collection.update_one(
-        {"_id": _SETTINGS_DOC_ID},
-        {"$set": data},
-        upsert=True,
-    )
+    try:
+        result = await settings_collection.update_one(
+            {"_id": _SETTINGS_DOC_ID},
+            {"$set": data},
+            upsert=True,
+        )
+        logger.info(
+            "MongoDB settings upsert: matched=%s modified=%s upserted_id=%s",
+            result.matched_count,
+            result.modified_count,
+            result.upserted_id,
+        )
+    except Exception as exc:
+        logger.error("Failed to save settings to MongoDB: %s", exc)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Échec de l'écriture en base de données : {exc}",
+        ) from exc
 
 
 def _apply_to_runtime(data: dict) -> None:
-    """Push updated keys into the in-memory settings singleton.
-
-    This ensures that services like OpenRouter see the new API key
-    immediately without waiting for the next cold start.
-    """
+    """Push updated keys into the in-memory settings singleton."""
     for key, value in data.items():
         if hasattr(settings, key):
             setattr(settings, key, value)
+
+
+def _merge_settings() -> dict:
+    """Merge environment defaults with MongoDB overrides.
+
+    Returns a flat dict with all current effective settings.
+    """
+    import asyncio
+    try:
+        db_overrides = asyncio.get_event_loop().run_until_complete(_load_db_settings())
+    except Exception:
+        db_overrides = {}
+
+    merged = {}
+    keys = [
+        "OPENROUTER_API_KEY",
+        "OPENROUTER_BASE_URL",
+        "DEFAULT_LLM_PROVIDER",
+        "DEFAULT_MODEL_NAME",
+        "OLLAMA_URL",
+        "OLLAMA_TIMEOUT",
+        "MODEL_TEMPERATURE",
+        "MODEL_TOP_P",
+        "MODEL_TOP_K",
+        "MODEL_REPEAT_PENALTY",
+        "MODEL_NUM_PREDICT",
+        "MODEL_NUM_CTX",
+    ]
+    for key in keys:
+        db_val = db_overrides.get(key)
+        env_val = getattr(settings, key, None)
+        merged[key] = db_val if db_val is not None else env_val
+    return merged
 
 
 # ---------------------------------------------------------------------------
@@ -66,18 +110,7 @@ def _apply_to_runtime(data: dict) -> None:
 # ---------------------------------------------------------------------------
 
 class ModelInfo(BaseModel):
-    """Schema representing metadata for a single LLM model.
-
-    Attributes:
-        name: Model identifier.
-        size: Size in bytes (0 for cloud models).
-        size_gb: Size in gigabytes (0.0 for cloud models).
-        provider: Origin provider — \"openrouter\", \"ollama\", or \"lmstudio\".
-        is_cloud: Whether the model is a cloud endpoint.
-        is_free: Whether the model is free to use.
-        context_length: Context window size (OpenRouter models).
-        description: Short model description (OpenRouter models).
-    """
+    """Schema representing metadata for a single LLM model."""
 
     name: str
     size: int
@@ -113,10 +146,7 @@ class SettingsData(BaseModel):
 
 
 class SettingsUpdate(BaseModel):
-    """Partial-update schema for mutable application settings.
-
-    All fields are optional; only provided values are updated and persisted.
-    """
+    """Partial-update schema for mutable application settings."""
 
     OPENROUTER_API_KEY: Optional[str] = None
     OPENROUTER_BASE_URL: Optional[str] = None
@@ -134,7 +164,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("MODEL_TEMPERATURE")
     @classmethod
     def validate_temperature(cls, v: Optional[float]) -> Optional[float]:
-        """Ensure temperature is between 0 and 2 inclusive."""
         if v is not None and not (0 <= v <= 2):
             raise ValueError("Temperature must be between 0 and 2")
         return v
@@ -142,7 +171,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("MODEL_TOP_P")
     @classmethod
     def validate_top_p(cls, v: Optional[float]) -> Optional[float]:
-        """Ensure top_p is between 0 and 1 inclusive."""
         if v is not None and not (0 <= v <= 1):
             raise ValueError("Top_p must be between 0 and 1")
         return v
@@ -150,7 +178,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("MODEL_TOP_K")
     @classmethod
     def validate_top_k(cls, v: Optional[int]) -> Optional[int]:
-        """Ensure top_k is at least 1."""
         if v is not None and v < 1:
             raise ValueError("Top_k must be at least 1")
         return v
@@ -158,7 +185,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("MODEL_REPEAT_PENALTY")
     @classmethod
     def validate_repeat_penalty(cls, v: Optional[float]) -> Optional[float]:
-        """Ensure repeat penalty is greater than 0."""
         if v is not None and v <= 0:
             raise ValueError("Repeat_penalty must be greater than 0")
         return v
@@ -166,7 +192,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("MODEL_NUM_PREDICT")
     @classmethod
     def validate_num_predict(cls, v: Optional[int]) -> Optional[int]:
-        """Ensure num_predict is at least 1."""
         if v is not None and v < 1:
             raise ValueError("Num_predict must be at least 1")
         return v
@@ -174,7 +199,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("MODEL_NUM_CTX")
     @classmethod
     def validate_num_ctx(cls, v: Optional[int]) -> Optional[int]:
-        """Ensure context window size is at least 512."""
         if v is not None and v < 512:
             raise ValueError("Num_ctx must be at least 512")
         return v
@@ -182,7 +206,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("OLLAMA_TIMEOUT")
     @classmethod
     def validate_timeout(cls, v: Optional[float]) -> Optional[float]:
-        """Ensure timeout is strictly positive."""
         if v is not None and v <= 0:
             raise ValueError("Timeout must be greater than 0")
         return v
@@ -190,7 +213,6 @@ class SettingsUpdate(BaseModel):
     @field_validator("DEFAULT_LLM_PROVIDER")
     @classmethod
     def validate_provider(cls, v: Optional[str]) -> Optional[str]:
-        """Ensure provider is one of the supported values."""
         allowed = {"openrouter", "ollama", "lmstudio"}
         if v is not None and v.lower() not in allowed:
             raise ValueError(f"Provider must be one of: {', '.join(allowed)}")
@@ -209,19 +231,20 @@ class SettingsUpdate(BaseModel):
 async def list_available_models(
     current_user: dict = Depends(get_current_user),
 ):
-    """List all available LLM models from OpenRouter (primary), Ollama, and LM Studio.
+    """List all available LLM models.
 
-    Args:
-        current_user: Injected authenticated user dependency.
-
-    Returns:
-        A ModelsResponse containing aggregated model metadata, sorted with cloud models first.
+    Loads the OpenRouter API key directly from MongoDB so it works
+    reliably across serverless cold starts.
     """
     models = []
 
+    # Load API key directly from DB — never rely on the in-memory singleton
+    db_settings = await _load_db_settings()
+    or_api_key = db_settings.get("OPENROUTER_API_KEY") or settings.OPENROUTER_API_KEY
+
     # Fetch OpenRouter models (primary cloud provider)
     try:
-        or_models = await openrouter_service.list_models()
+        or_models = await openrouter_service.list_models(api_key=or_api_key)
         for m in or_models:
             models.append(
                 ModelInfo(
@@ -304,12 +327,6 @@ async def get_settings(
     """Return the current runtime application settings.
 
     Values are merged from environment defaults + MongoDB overrides.
-
-    Args:
-        current_user: Injected admin user dependency.
-
-    Returns:
-        A SettingsData object with the active configuration values.
     """
     db_overrides = await _load_db_settings()
 
@@ -338,22 +355,17 @@ async def update_settings(
     update_data: SettingsUpdate,
     current_user: dict = Depends(get_current_admin_user),
 ):
-    """Update application settings and persist them to MongoDB.
-
-    Args:
-        update_data: Partial settings payload; only provided fields are updated.
-        current_user: Injected admin user dependency.
-
-    Returns:
-        The updated SettingsData reflecting the new runtime values.
-    """
+    """Update application settings and persist them to MongoDB."""
     data = update_data.model_dump(exclude_unset=True)
+    logger.info("Received settings update for keys: %s", list(data.keys()))
 
     # Save to MongoDB so the values survive serverless cold starts
     await _save_db_settings(data)
 
     # Verify the write actually landed in MongoDB
     loaded = await _load_db_settings()
+    logger.info("DB settings after write: %s", {k: "***" if "KEY" in k else v for k, v in loaded.items()})
+
     for key, expected in data.items():
         actual = loaded.get(key)
         if actual != expected:
@@ -368,7 +380,39 @@ async def update_settings(
 
     # Update in-memory singleton so the current instance uses them immediately
     _apply_to_runtime(data)
-    logger.info("Settings updated and persisted: %s", list(data.keys()))
+    logger.info("Settings updated and persisted successfully: %s", list(data.keys()))
 
     # Return merged view
     return await get_settings(current_user)
+
+
+@router.get(
+    "/status",
+    status_code=status.HTTP_200_OK,
+)
+async def settings_status(
+    current_user: dict = Depends(get_current_user),
+):
+    """Debug endpoint showing whether the OpenRouter key is persisted.
+
+    Returns a masked view of the API key so admins can verify persistence
+    without exposing the full secret.
+    """
+    db_overrides = await _load_db_settings()
+    key = db_overrides.get("OPENROUTER_API_KEY") or settings.OPENROUTER_API_KEY
+
+    masked = ""
+    if key:
+        if len(key) > 12:
+            masked = key[:6] + "..." + key[-6:]
+        else:
+            masked = "***"
+
+    return {
+        "api_key_configured": bool(key),
+        "api_key_masked": masked,
+        "default_model": db_overrides.get("DEFAULT_MODEL_NAME") or settings.DEFAULT_MODEL_NAME,
+        "default_provider": db_overrides.get("DEFAULT_LLM_PROVIDER") or settings.DEFAULT_LLM_PROVIDER,
+        "db_document_exists": "OPENROUTER_API_KEY" in db_overrides,
+        "db_keys_count": len(db_overrides),
+    }
