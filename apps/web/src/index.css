@@ -31,6 +31,10 @@ body {
 /* App-level custom styles */
 
 /* Smooth scrollbar for chat */
+.custom-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: oklch(0.4 0.01 286) transparent;
+}
 .custom-scrollbar::-webkit-scrollbar {
   width: 6px;
 }

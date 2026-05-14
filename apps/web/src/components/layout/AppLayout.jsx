@@ -373,7 +373,7 @@ export default function AppLayout() {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-hidden">
+        <main className="flex-1 overflow-auto">
           <Outlet context={{ conversations, fetchConversations, agents, fetchAgents }} />
         </main>
       </div>

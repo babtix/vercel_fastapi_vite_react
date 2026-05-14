@@ -198,18 +198,26 @@ export default function ProviderSettings() {
         </div>
       )}
 
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-all shadow-md shadow-primary/20"
-      >
-        {saving ? (
-          <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-        ) : (
-          <Save className="w-4 h-4" />
-        )}
-        Enregistrer
-      </button>
+      {/* Sticky save bar */}
+      <div className="sticky bottom-0 -mx-6 px-6 py-4 bg-background/80 backdrop-blur-md border-t border-border/40">
+        <div className="max-w-4xl mx-auto flex items-center justify-between">
+          <p className="text-xs text-muted-foreground hidden sm:block">
+            Les changements sont appliqués immédiatement après l'enregistrement.
+          </p>
+          <button
+            onClick={handleSave}
+            disabled={saving}
+            className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-all shadow-md shadow-primary/20 ml-auto"
+          >
+            {saving ? (
+              <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+            ) : (
+              <Save className="w-4 h-4" />
+            )}
+            Enregistrer
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
