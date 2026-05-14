@@ -22,7 +22,7 @@ from routers import rag as rag_router
 from routers import research as research_router
 from tools import export_tool, pdf_reader_tool, docx_reader_tool
 from core.settings import settings
-from core.database import init_db
+from core.database import init_db, settings_collection
 from core.rate_limit import limiter
 
 # Create static directories
@@ -40,7 +40,18 @@ async def lifespan(app: FastAPI):
         await init_db()
     except Exception as exc:
         logging.error("Database initialization failed: %s", exc)
-        # Don't crash the app on DB failure — endpoints will return 500 individually
+
+    # Load persisted settings from MongoDB so API keys survive serverless cold starts
+    try:
+        doc = await settings_collection.find_one({"_id": "runtime_config"})
+        if doc:
+            for key, value in doc.items():
+                if key != "_id" and hasattr(settings, key) and value is not None:
+                    setattr(settings, key, value)
+            logging.info("Loaded %d persisted settings from MongoDB.", len(doc) - 1)
+    except Exception as exc:
+        logging.warning("Could not load persisted settings from MongoDB: %s", exc)
+
     yield
 
 

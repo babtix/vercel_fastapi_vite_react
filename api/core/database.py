@@ -24,6 +24,9 @@ agents_collection = database.get_collection("agents")
 conversations_collection = database.get_collection("conversations")
 """Collection storing chat conversation and message history documents."""
 
+settings_collection = database.get_collection("app_settings")
+"""Collection storing runtime application settings overrides."""
+
 
 async def init_db() -> None:
     """Initialize database indexes.

@@ -1,16 +1,16 @@
 """API endpoints for managing application settings and LLM models.
 
 Handles listing available models from OpenRouter (primary), Ollama, and LM Studio,
-reading runtime configuration, and persisting setting changes to the `.env` file.
+reading runtime configuration from MongoDB (with env fallbacks), and persisting
+setting changes to the database so they survive serverless cold starts.
 """
 
-import os
 import logging
 from fastapi import APIRouter, Depends, HTTPException, status
-from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, field_validator
 from typing import Optional, List
 from core.settings import settings
+from core.database import settings_collection
 from dependencies import get_current_user, get_current_admin_user
 from services import lmstudio_service, openrouter_service
 import ollama
@@ -19,6 +19,50 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/settings", tags=["Settings"])
 
+# ---------------------------------------------------------------------------
+# Helpers: read / write settings overrides from MongoDB
+# ---------------------------------------------------------------------------
+
+_SETTINGS_DOC_ID = "runtime_config"
+"""Fixed document ID for the singleton settings override document."""
+
+
+async def _load_db_settings() -> dict:
+    """Load user-persisted settings from MongoDB.
+
+    Returns an empty dict if the document doesn't exist yet.
+    """
+    doc = await settings_collection.find_one({"_id": _SETTINGS_DOC_ID})
+    if doc:
+        # Strip MongoDB internals
+        doc.pop("_id", None)
+        return doc
+    return {}
+
+
+async def _save_db_settings(data: dict) -> None:
+    """Persist settings overrides to MongoDB, upserting the singleton document."""
+    await settings_collection.update_one(
+        {"_id": _SETTINGS_DOC_ID},
+        {"$set": data},
+        upsert=True,
+    )
+
+
+def _apply_to_runtime(data: dict) -> None:
+    """Push updated keys into the in-memory settings singleton.
+
+    This ensures that services like OpenRouter see the new API key
+    immediately without waiting for the next cold start.
+    """
+    for key, value in data.items():
+        if hasattr(settings, key):
+            setattr(settings, key, value)
+
+
+# ---------------------------------------------------------------------------
+# Schemas
+# ---------------------------------------------------------------------------
 
 class ModelInfo(BaseModel):
     """Schema representing metadata for a single LLM model.
@@ -152,6 +196,10 @@ class SettingsUpdate(BaseModel):
         return v.lower() if v else v
 
 
+# ---------------------------------------------------------------------------
+# Endpoints
+# ---------------------------------------------------------------------------
+
 @router.get(
     "/models",
     response_model=ModelsResponse,
@@ -163,7 +211,7 @@ async def list_available_models(
     """List all available LLM models from OpenRouter (primary), Ollama, and LM Studio.
 
     Args:
-        current_user: Injected admin user dependency.
+        current_user: Injected authenticated user dependency.
 
     Returns:
         A ModelsResponse containing aggregated model metadata, sorted with cloud models first.
@@ -244,54 +292,34 @@ async def get_settings(
 ):
     """Return the current runtime application settings.
 
+    Values are merged from environment defaults + MongoDB overrides.
+
     Args:
         current_user: Injected admin user dependency.
 
     Returns:
         A SettingsData object with the active configuration values.
     """
+    db_overrides = await _load_db_settings()
+
+    def _val(key: str, default):
+        v = db_overrides.get(key)
+        return v if v is not None else default
+
     return SettingsData(
-        OPENROUTER_API_KEY=settings.OPENROUTER_API_KEY,
-        OPENROUTER_BASE_URL=settings.OPENROUTER_BASE_URL,
-        DEFAULT_LLM_PROVIDER=settings.DEFAULT_LLM_PROVIDER,
-        DEFAULT_MODEL_NAME=settings.DEFAULT_MODEL_NAME,
-        OLLAMA_URL=settings.OLLAMA_URL,
-        OLLAMA_TIMEOUT=settings.OLLAMA_TIMEOUT,
-        MODEL_TEMPERATURE=settings.MODEL_TEMPERATURE,
-        MODEL_TOP_P=settings.MODEL_TOP_P,
-        MODEL_TOP_K=settings.MODEL_TOP_K,
-        MODEL_REPEAT_PENALTY=settings.MODEL_REPEAT_PENALTY,
-        MODEL_NUM_PREDICT=settings.MODEL_NUM_PREDICT,
-        MODEL_NUM_CTX=settings.MODEL_NUM_CTX,
+        OPENROUTER_API_KEY=_val("OPENROUTER_API_KEY", settings.OPENROUTER_API_KEY),
+        OPENROUTER_BASE_URL=_val("OPENROUTER_BASE_URL", settings.OPENROUTER_BASE_URL),
+        DEFAULT_LLM_PROVIDER=_val("DEFAULT_LLM_PROVIDER", settings.DEFAULT_LLM_PROVIDER),
+        DEFAULT_MODEL_NAME=_val("DEFAULT_MODEL_NAME", settings.DEFAULT_MODEL_NAME),
+        OLLAMA_URL=_val("OLLAMA_URL", settings.OLLAMA_URL),
+        OLLAMA_TIMEOUT=_val("OLLAMA_TIMEOUT", settings.OLLAMA_TIMEOUT),
+        MODEL_TEMPERATURE=_val("MODEL_TEMPERATURE", settings.MODEL_TEMPERATURE),
+        MODEL_TOP_P=_val("MODEL_TOP_P", settings.MODEL_TOP_P),
+        MODEL_TOP_K=_val("MODEL_TOP_K", settings.MODEL_TOP_K),
+        MODEL_REPEAT_PENALTY=_val("MODEL_REPEAT_PENALTY", settings.MODEL_REPEAT_PENALTY),
+        MODEL_NUM_PREDICT=_val("MODEL_NUM_PREDICT", settings.MODEL_NUM_PREDICT),
+        MODEL_NUM_CTX=_val("MODEL_NUM_CTX", settings.MODEL_NUM_CTX),
     )
-
-
-def _persist_env(data: dict) -> None:
-    """Persist updated settings to the `.env` file on disk.
-
-    Args:
-        data: Dictionary of setting keys and their new values.
-    """
-    env_lines: list[str] = []
-    if os.path.exists(".env"):
-        with open(".env", "r", encoding="utf-8") as f:
-            env_lines = f.readlines()
-
-    env_keys: dict[str, int] = {}
-    for i, line in enumerate(env_lines):
-        if "=" in line and not line.strip().startswith("#"):
-            k = line.split("=")[0].strip()
-            env_keys[k] = i
-
-    for key, value in data.items():
-        safe_value = str(value).replace("\n", "").replace("\r", "")
-        if key in env_keys:
-            env_lines[env_keys[key]] = f"{key}={safe_value}\n"
-        else:
-            env_lines.append(f"{key}={safe_value}\n")
-
-    with open(".env", "w", encoding="utf-8") as f:
-        f.writelines(env_lines)
 
 
 @router.put("/", response_model=SettingsData, status_code=status.HTTP_200_OK)
@@ -299,7 +327,7 @@ async def update_settings(
     update_data: SettingsUpdate,
     current_user: dict = Depends(get_current_admin_user),
 ):
-    """Update application settings and persist them to disk.
+    """Update application settings and persist them to MongoDB.
 
     Args:
         update_data: Partial settings payload; only provided fields are updated.
@@ -310,23 +338,11 @@ async def update_settings(
     """
     data = update_data.model_dump(exclude_unset=True)
 
-    for key, value in data.items():
-        setattr(settings, key, value)
+    # Save to MongoDB so the values survive serverless cold starts
+    await _save_db_settings(data)
 
-    # Save to .env in background thread
-    await run_in_threadpool(_persist_env, data)
+    # Update in-memory singleton so the current instance uses them immediately
+    _apply_to_runtime(data)
 
-    return SettingsData(
-        OPENROUTER_API_KEY=settings.OPENROUTER_API_KEY,
-        OPENROUTER_BASE_URL=settings.OPENROUTER_BASE_URL,
-        DEFAULT_LLM_PROVIDER=settings.DEFAULT_LLM_PROVIDER,
-        DEFAULT_MODEL_NAME=settings.DEFAULT_MODEL_NAME,
-        OLLAMA_URL=settings.OLLAMA_URL,
-        OLLAMA_TIMEOUT=settings.OLLAMA_TIMEOUT,
-        MODEL_TEMPERATURE=settings.MODEL_TEMPERATURE,
-        MODEL_TOP_P=settings.MODEL_TOP_P,
-        MODEL_TOP_K=settings.MODEL_TOP_K,
-        MODEL_REPEAT_PENALTY=settings.MODEL_REPEAT_PENALTY,
-        MODEL_NUM_PREDICT=settings.MODEL_NUM_PREDICT,
-        MODEL_NUM_CTX=settings.MODEL_NUM_CTX,
-    )
+    # Return merged view
+    return await get_settings(current_user)
