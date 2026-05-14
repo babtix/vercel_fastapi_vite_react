@@ -13,6 +13,7 @@ from core.settings import settings
 from core.database import settings_collection
 from dependencies import get_current_user, get_current_admin_user
 from services import lmstudio_service, openrouter_service
+from services.openrouter_service import OpenRouterError, OpenRouterKeyMissingError
 import ollama
 
 logger = logging.getLogger(__name__)
@@ -234,6 +235,16 @@ async def list_available_models(
                     description=m.get("description", ""),
                 )
             )
+    except OpenRouterKeyMissingError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        )
+    except OpenRouterError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=str(exc),
+        )
     except Exception as e:
         logger.error("Error fetching OpenRouter models: %s", e)
 
@@ -341,8 +352,23 @@ async def update_settings(
     # Save to MongoDB so the values survive serverless cold starts
     await _save_db_settings(data)
 
+    # Verify the write actually landed in MongoDB
+    loaded = await _load_db_settings()
+    for key, expected in data.items():
+        actual = loaded.get(key)
+        if actual != expected:
+            logger.error(
+                "Settings persistence verification failed for %s: expected=%r, actual=%r",
+                key, expected, actual,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"La sauvegarde de {key} a échoué. Veuillez réessayer.",
+            )
+
     # Update in-memory singleton so the current instance uses them immediately
     _apply_to_runtime(data)
+    logger.info("Settings updated and persisted: %s", list(data.keys()))
 
     # Return merged view
     return await get_settings(current_user)

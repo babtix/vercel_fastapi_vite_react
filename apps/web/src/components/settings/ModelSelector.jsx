@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from "react"
-import { Cloud, Server, Filter, ChevronDown, RefreshCw, Check, Gift, CreditCard } from "lucide-react"
+import { Cloud, Server, Filter, ChevronDown, RefreshCw, Check, Gift, CreditCard, AlertCircle, ExternalLink } from "lucide-react"
 import api from "../../lib/api"
 
 export default function ModelSelector({ value, onChange, provider, className = "" }) {
@@ -13,6 +13,13 @@ export default function ModelSelector({ value, onChange, provider, className = "
   useEffect(() => {
     fetchModels()
   }, [])
+
+  // Refetch when dropdown opens if we have no models or an error
+  useEffect(() => {
+    if (dropdownOpen && (models.length === 0 || modelError)) {
+      fetchModels()
+    }
+  }, [dropdownOpen])
 
   // Close dropdown on outside click
   useEffect(() => {
@@ -32,7 +39,8 @@ export default function ModelSelector({ value, onChange, provider, className = "
       const res = await api.get("/settings/models")
       setModels(res.data.models || [])
     } catch (err) {
-      setModelError(err.response?.data?.detail || "Impossible de charger les modèles")
+      const msg = err.response?.data?.detail || "Impossible de charger les modèles"
+      setModelError(msg)
     } finally {
       setLoadingModels(false)
     }
@@ -52,6 +60,11 @@ export default function ModelSelector({ value, onChange, provider, className = "
     free: "gratuit",
     paid: "payant",
   }
+
+  const isKeyMissing = modelError && (
+    modelError.includes("Clé API OpenRouter non configurée") ||
+    modelError.includes("OpenRouter")
+  )
 
   return (
     <div className={`relative ${className}`} ref={dropdownRef}>
@@ -127,11 +140,28 @@ export default function ModelSelector({ value, onChange, provider, className = "
               </div>
             ) : modelError ? (
               <div className="px-3 py-4 text-center">
-                <p className="text-sm text-destructive">{modelError}</p>
+                <div className="flex items-center justify-center gap-1.5 mb-2">
+                  <AlertCircle className="w-4 h-4 text-destructive" />
+                  <p className="text-sm text-destructive font-medium">Erreur de chargement</p>
+                </div>
+                <p className="text-xs text-muted-foreground">{modelError}</p>
+                {isKeyMissing && (
+                  <a
+                    href="/settings"
+                    className="inline-flex items-center gap-1 mt-3 text-xs text-primary hover:underline"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      window.location.href = "/settings"
+                    }}
+                  >
+                    <ExternalLink className="w-3 h-3" />
+                    Aller à Administration → Fournisseur LLM
+                  </a>
+                )}
                 <button
                   type="button"
                   onClick={fetchModels}
-                  className="mt-2 text-xs text-primary hover:underline"
+                  className="mt-3 text-xs text-primary hover:underline block mx-auto"
                 >
                   Réessayer
                 </button>

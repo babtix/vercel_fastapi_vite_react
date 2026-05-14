@@ -13,6 +13,16 @@ logger = logging.getLogger(__name__)
 OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1"
 
 
+class OpenRouterError(Exception):
+    """Custom exception for OpenRouter API failures."""
+    pass
+
+
+class OpenRouterKeyMissingError(OpenRouterError):
+    """Raised when the OpenRouter API key is not configured."""
+    pass
+
+
 async def generate_chat_response_stream(messages: list, model: str = None):
     """Stream chat response from OpenRouter.
 
@@ -87,12 +97,17 @@ async def list_models() -> list:
     """Fetch the list of available models from OpenRouter.
 
     Returns:
-        A list of dicts with keys: name, size, size_gb, provider, is_cloud.
-        Returns an empty list on failure.
+        A list of dicts with keys: name, size, size_gb, provider, is_cloud, is_free.
+
+    Raises:
+        OpenRouterKeyMissingError: If OPENROUTER_API_KEY is not configured.
+        OpenRouterError: If the OpenRouter API request fails.
     """
     if not settings.OPENROUTER_API_KEY:
-        logger.warning("OPENROUTER_API_KEY is not set — skipping model fetch.")
-        return []
+        raise OpenRouterKeyMissingError(
+            "Clé API OpenRouter non configurée. "
+            "Rendez-vous dans Administration > Fournisseur LLM pour la renseigner."
+        )
 
     headers = {
         "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
@@ -131,6 +146,19 @@ async def list_models() -> list:
                     }
                 )
             return models
+    except httpx.HTTPStatusError as exc:
+        error_text = ""
+        try:
+            error_text = exc.response.text
+        except Exception:
+            pass
+        logger.error("OpenRouter list_models HTTP error %s: %s", exc.response.status_code, error_text)
+        raise OpenRouterError(
+            f"Erreur OpenRouter ({exc.response.status_code}): "
+            "vérifiez que votre clé API est valide."
+        ) from exc
     except Exception as exc:
         logger.error("Failed to list OpenRouter models: %s", exc)
-        return []
+        raise OpenRouterError(
+            "Impossible de contacter OpenRouter. Vérifiez votre connexion."
+        ) from exc
