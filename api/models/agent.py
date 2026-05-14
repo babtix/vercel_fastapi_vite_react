@@ -48,10 +48,10 @@ class AgentBase(BaseModel):
     @field_validator("provider")
     @classmethod
     def validate_provider(cls, v: str) -> str:
-        """Validate that the LLM provider is either 'ollama' or 'lmstudio'."""
+        """Validate that the LLM provider is supported."""
         v = v.lower().strip()
-        if v not in {"ollama", "lmstudio"}:
-            raise ValueError('Provider must be "ollama" or "lmstudio"')
+        if v not in {"openrouter", "ollama", "lmstudio"}:
+            raise ValueError('Provider must be "openrouter", "ollama" or "lmstudio"')
         return v
 
 
