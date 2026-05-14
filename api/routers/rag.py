@@ -100,6 +100,22 @@ class SearchResponse(BaseModel):
     total_results: int
 
 
+class RagStatusResponse(BaseModel):
+    """Schema returned from the RAG health-check endpoint.
+
+    Attributes:
+        embedding_ready: Whether the local embedding model is loaded and working.
+        embedding_model_name: Name of the configured embedding model.
+        chroma_available: Whether ChromaDB is installed and functional.
+        message: Human-readable status message.
+    """
+
+    embedding_ready: bool
+    embedding_model_name: str
+    chroma_available: bool
+    message: str
+
+
 def _validate_file(filename: str):
     """Validate that a file has an allowed extension for RAG indexing.
 
@@ -383,3 +399,23 @@ async def search_documents(
         results=chunks,
         total_results=len(chunks),
     )
+
+
+@router.get(
+    "/status",
+    response_model=RagStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def rag_status(
+    current_user: dict = Depends(get_current_user),
+):
+    """Return the current health of the RAG pipeline.
+
+    Checks whether Ollama is reachable and whether the configured
+    embedding model is available.
+
+    Returns:
+        A RagStatusResponse with prerequisite flags and a message.
+    """
+    status_data = await run_in_threadpool(rag_service.get_rag_status)
+    return RagStatusResponse(**status_data)

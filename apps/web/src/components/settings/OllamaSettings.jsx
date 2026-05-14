@@ -107,18 +107,23 @@ export default function OllamaSettings() {
         </div>
       )}
 
-      <button
-        onClick={handleSave}
-        disabled={saving}
-        className="flex items-center gap-2 px-6 py-2.5 rounded-xl bg-primary text-primary-foreground text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-all shadow-md shadow-primary/20"
-      >
-        {saving ? (
-          <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
-        ) : (
-          <Save className="w-4 h-4" />
-        )}
-        Enregistrer
-      </button>
+      <div className="flex items-center justify-between gap-4 bg-card border border-border/50 rounded-2xl p-5">
+        <p className="text-xs text-muted-foreground hidden sm:block">
+          Les changements sont appliqués immédiatement après l'enregistrement.
+        </p>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="flex items-center gap-2 px-6 py-2.5 rounded-full bg-primary text-primary-foreground text-sm font-medium hover:bg-primary/90 disabled:opacity-50 transition-all ml-auto"
+        >
+          {saving ? (
+            <div className="w-4 h-4 border-2 border-primary-foreground border-t-transparent rounded-full animate-spin" />
+          ) : (
+            <Save className="w-4 h-4" />
+          )}
+          Enregistrer
+        </button>
+      </div>
     </div>
   )
 }

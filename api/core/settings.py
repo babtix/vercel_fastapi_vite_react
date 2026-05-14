@@ -78,7 +78,8 @@ class Settings(BaseSettings):
     MODEL_STOP: list[str] = []
 
     # RAG settings
-    RAG_EMBEDDING_MODEL: str = "nomic-embed-text"
+    # sentence-transformers model (local, no Ollama required)
+    RAG_EMBEDDING_MODEL: str = "paraphrase-multilingual-MiniLM-L12-v2"
     RAG_CHUNK_SIZE: int = 500
     RAG_CHUNK_OVERLAP: int = 50
     RAG_TOP_K: int = 5

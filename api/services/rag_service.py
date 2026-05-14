@@ -3,7 +3,7 @@
 Handles the full document lifecycle for agent knowledge bases:
 - Text extraction from PDF, DOCX, and plain-text files
 - Chunking using RecursiveCharacterTextSplitter
-- Embedding generation via Ollama
+- Embedding generation via sentence-transformers (local, no Ollama required)
 - Vector storage and semantic search with ChromaDB
 """
 
@@ -11,7 +11,7 @@ import os
 import io
 import hashlib
 import logging
-import ollama as ollama_client
+import numpy as np
 import pypdf
 import docx
 from typing import List, Dict, Optional
@@ -61,11 +61,35 @@ else:
     chroma = MockChromaClient()
 
 # ---------------------------------------------------------------------------
-# Ollama client initialization (used for embedding generation)
+# sentence-transformers embedding model (lazy-loaded)
 # ---------------------------------------------------------------------------
-_ollama_client = ollama_client.Client(
-    host=settings.OLLAMA_URL, timeout=settings.OLLAMA_TIMEOUT
-)
+_st_model = None
+
+
+def _get_st_model():
+    """Lazy-load the sentence-transformers embedding model.
+
+    The model is downloaded automatically on first use and cached locally.
+    This avoids heavy imports during module load and keeps serverless cold-starts fast.
+    """
+    global _st_model
+    if _st_model is None:
+        try:
+            from sentence_transformers import SentenceTransformer
+            logger.info("Loading sentence-transformers model: %s", settings.RAG_EMBEDDING_MODEL)
+            _st_model = SentenceTransformer(settings.RAG_EMBEDDING_MODEL)
+            logger.info("Model loaded successfully (device: %s)", _st_model.device)
+        except ImportError as exc:
+            raise RuntimeError(
+                "La bibliothèque 'sentence-transformers' n'est pas installée. "
+                "Exécutez: pip install sentence-transformers"
+            ) from exc
+        except Exception as exc:
+            raise RuntimeError(
+                f"Impossible de charger le modèle d'embedding '{settings.RAG_EMBEDDING_MODEL}': {exc}"
+            ) from exc
+    return _st_model
+
 
 # ---------------------------------------------------------------------------
 # Text splitter configuration
@@ -151,25 +175,35 @@ def extract_text(filename: str, file_bytes: bytes) -> str:
 
 
 def _embed_texts(texts: List[str]) -> List[List[float]]:
-    """Generate embedding vectors for a list of texts using Ollama.
+    """Generate embedding vectors for a list of texts using sentence-transformers.
 
-    Processes texts in batches of 32 to avoid overloading the embedding endpoint.
+    Processes texts in batches to avoid memory spikes with large documents.
 
     Args:
         texts: List of text strings to embed.
 
     Returns:
         List of embedding vectors (each vector is a list of floats).
-    """
-    all_embeddings = []
-    batch_size = 32
 
-    for i in range(0, len(texts), batch_size):
-        batch = texts[i : i + batch_size]
-        response = _ollama_client.embed(
-            model=settings.RAG_EMBEDDING_MODEL, input=batch
-        )
-        all_embeddings.extend(response["embeddings"])
+    Raises:
+        RuntimeError: If the embedding model cannot be loaded or inference fails.
+    """
+    model = _get_st_model()
+    batch_size = 32
+    all_embeddings = []
+
+    try:
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            # encode returns numpy array of shape (batch_size, embedding_dim)
+            embeddings = model.encode(batch, convert_to_numpy=True, show_progress_bar=False)
+            # Convert each row to a plain Python list of floats
+            for vec in embeddings:
+                all_embeddings.append(vec.astype(float).tolist())
+    except Exception as exc:
+        raise RuntimeError(
+            f"Erreur lors de la génération des embeddings: {exc}"
+        ) from exc
 
     return all_embeddings
 
@@ -419,35 +453,45 @@ def get_agent_doc_count(agent_id: str) -> int:
         logger.warning("Could not count docs for agent '%s': %s", agent_id, exc)
         return 0
 
-    matching = collection.get(
-        where={"doc_hash": doc_hash}, include=["metadatas"]
-    )
-    count = len(matching["ids"])
 
-    if count > 0:
-        collection.delete(where={"doc_hash": doc_hash})
+def get_rag_status() -> Dict:
+    """Check whether the RAG pipeline prerequisites are satisfied.
 
-    return count
+    Returns:
+        Dict with:
+          - embedding_ready: bool
+          - embedding_model_name: str
+          - chroma_available: bool
+          - message: Human-readable status message in French.
+    """
+    status = {
+        "embedding_ready": False,
+        "embedding_model_name": settings.RAG_EMBEDDING_MODEL,
+        "chroma_available": CHROMA_AVAILABLE,
+        "message": "",
+    }
 
+    if not CHROMA_AVAILABLE:
+        status["message"] = (
+            "ChromaDB n'est pas disponible. "
+            "Le stockage vectoriel est désactivé (mode serverless)."
+        )
+        return status
 
-def delete_all_documents(agent_id: str) -> int:
-    # Delete the entire collection for an agent
-    collection_name = _collection_name(agent_id)
     try:
-        collection = chroma.get_collection(collection_name)
-        count = collection.count()
-        chroma.delete_collection(collection_name)
-        return count
+        model = _get_st_model()
+        # Verify the model works with a dummy inference
+        _ = model.encode(["test"], convert_to_numpy=True, show_progress_bar=False)
+        status["embedding_ready"] = True
+        status["message"] = "RAG prêt — embeddings locaux actifs."
+    except ImportError as exc:
+        status["message"] = (
+            "Bibliothèque 'sentence-transformers' manquante. "
+            "Exécutez 'pip install sentence-transformers'."
+        )
+        logger.warning("sentence-transformers import failed: %s", exc)
     except Exception as exc:
-        logger.warning("Could not delete collection '%s': %s", collection_name, exc)
-        return 0
+        status["message"] = f"Erreur lors du chargement du modèle: {exc}"
+        logger.warning("Embedding model check failed: %s", exc)
 
-
-def get_agent_doc_count(agent_id: str) -> int:
-    # Get total chunk count for an agent
-    try:
-        collection = _get_or_create_collection(agent_id)
-        return collection.count()
-    except Exception as exc:
-        logger.warning("Could not count docs for agent '%s': %s", agent_id, exc)
-        return 0
+    return status
